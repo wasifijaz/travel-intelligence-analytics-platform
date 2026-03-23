@@ -11,7 +11,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-from api.data_cache import refresh_cache, json_health
+from typing import Optional
+
+from api.data_cache import refresh_cache, json_health, compute_filtered_response
 from api.travel_demand_intel import refresh_travel_demand_cache
 
 refresh_cache()
@@ -49,9 +51,143 @@ app.include_router(travel_demand.router, prefix="/api", tags=["travel-demand"])
 JSON_CT = "application/json"
 
 
+def _filtered(endpoint: str,
+              date_from: Optional[str] = None,
+              date_to: Optional[str] = None,
+              destination: Optional[str] = None,
+              crisis_id: Optional[int] = None,
+              source_market: Optional[str] = None,
+              travel_type: Optional[str] = None) -> Response:
+    return Response(
+        content=compute_filtered_response(
+            endpoint=endpoint,
+            date_from=date_from,
+            date_to=date_to,
+            destination=destination,
+            crisis_id=crisis_id,
+            source_market=source_market,
+            travel_type=travel_type,
+        ),
+        media_type=JSON_CT,
+    )
+
+
 @app.get("/api/health")
 def health():
     return Response(content=json_health(), media_type=JSON_CT)
+
+
+@app.get("/api/kpis/hotel")
+def kpis_hotel(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    destination: Optional[str] = None,
+    crisis_id: Optional[int] = None,
+    source_market: Optional[str] = None,
+    travel_type: Optional[str] = None,
+):
+    return _filtered("kpis/hotel", date_from, date_to, destination, crisis_id, source_market, travel_type)
+
+
+@app.get("/api/kpis/ota")
+def kpis_ota(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    destination: Optional[str] = None,
+    crisis_id: Optional[int] = None,
+    source_market: Optional[str] = None,
+    travel_type: Optional[str] = None,
+):
+    return _filtered("kpis/ota", date_from, date_to, destination, crisis_id, source_market, travel_type)
+
+
+@app.get("/api/risk-index")
+def risk_index(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    destination: Optional[str] = None,
+    crisis_id: Optional[int] = None,
+    source_market: Optional[str] = None,
+    travel_type: Optional[str] = None,
+):
+    return _filtered("risk-index", date_from, date_to, destination, crisis_id, source_market, travel_type)
+
+
+@app.get("/api/corridor")
+def corridor(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    destination: Optional[str] = None,
+    crisis_id: Optional[int] = None,
+    source_market: Optional[str] = None,
+    travel_type: Optional[str] = None,
+):
+    return _filtered("corridor", date_from, date_to, destination, crisis_id, source_market, travel_type)
+
+
+@app.get("/api/funnel")
+def funnel(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    destination: Optional[str] = None,
+    crisis_id: Optional[int] = None,
+    source_market: Optional[str] = None,
+    travel_type: Optional[str] = None,
+):
+    return _filtered("funnel", date_from, date_to, destination, crisis_id, source_market, travel_type)
+
+
+@app.get("/api/prepost")
+def prepost(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    destination: Optional[str] = None,
+    crisis_id: Optional[int] = None,
+    source_market: Optional[str] = None,
+    travel_type: Optional[str] = None,
+):
+    return _filtered("prepost", date_from, date_to, destination, crisis_id, source_market, travel_type)
+
+
+@app.get("/api/timeline-by-dest")
+def timeline_by_dest(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    destination: Optional[str] = None,
+    crisis_id: Optional[int] = None,
+    source_market: Optional[str] = None,
+    travel_type: Optional[str] = None,
+):
+    return _filtered("timeline-by-dest", date_from, date_to, destination, crisis_id, source_market, travel_type)
+
+
+@app.get("/api/behavior")
+def behavior(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    destination: Optional[str] = None,
+    crisis_id: Optional[int] = None,
+    source_market: Optional[str] = None,
+    travel_type: Optional[str] = None,
+):
+    return _filtered("behavior", date_from, date_to, destination, crisis_id, source_market, travel_type)
+
+
+@app.get("/api/travel-flows")
+def travel_flows(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    destination: Optional[str] = None,
+    crisis_id: Optional[int] = None,
+    source_market: Optional[str] = None,
+    travel_type: Optional[str] = None,
+):
+    return _filtered("travel-flows", date_from, date_to, destination, crisis_id, source_market, travel_type)
+
+
+@app.get("/api/source-markets")
+def source_markets():
+    return _filtered("source-markets")
 
 
 @app.post("/api/refresh")
