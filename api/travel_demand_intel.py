@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 import os
+from urllib.parse import urlparse, parse_qs, unquote
 
 import numpy as np
 import pandas as pd
@@ -26,13 +27,32 @@ def _is_postgres() -> bool:
     return bool(DB_URL or os.getenv("DATABASE_URL"))
 
 
+def _pg_connect():
+    import psycopg2
+
+    db_url = DB_URL or os.getenv("DATABASE_URL")
+    if not db_url:
+        raise ValueError("DATABASE_URL not set")
+    parsed = urlparse(db_url)
+    if parsed.scheme.startswith("postgres"):
+        qs = parse_qs(parsed.query or "")
+        sslmode = (qs.get("sslmode", ["require"])[0]) or "require"
+        return psycopg2.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            user=unquote(parsed.username or ""),
+            password=unquote(parsed.password or ""),
+            dbname=(parsed.path or "/postgres").lstrip("/"),
+            sslmode=sslmode,
+        )
+    return psycopg2.connect(db_url)
+
+
 def _query_df(sql: str, params: list[Any] | None = None) -> pd.DataFrame:
     params = params or []
     if _is_postgres():
         try:
-            import psycopg2
-
-            conn = psycopg2.connect(DB_URL or os.getenv("DATABASE_URL"))
+            conn = _pg_connect()
             q = sql.replace("?", "%s")
             out = pd.read_sql_query(q, conn, params=params)
             conn.close()

@@ -9,9 +9,31 @@ from typing import Optional
 from datetime import datetime
 import sys
 import os
+from urllib.parse import urlparse, parse_qs, unquote
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def _pg_connect():
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        return None
+    import psycopg2
+
+    parsed = urlparse(db_url)
+    if parsed.scheme.startswith("postgres"):
+        qs = parse_qs(parsed.query or "")
+        sslmode = (qs.get("sslmode", ["require"])[0]) or "require"
+        return psycopg2.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            user=unquote(parsed.username or ""),
+            password=unquote(parsed.password or ""),
+            dbname=(parsed.path or "/postgres").lstrip("/"),
+            sslmode=sslmode,
+        )
+    return psycopg2.connect(db_url)
 
 
 def load_db(db_path: Path, date_from: Optional[str] = None, date_to: Optional[str] = None):
@@ -21,9 +43,7 @@ def load_db(db_path: Path, date_from: Optional[str] = None, date_to: Optional[st
     is_pg = bool(db_url)
     try:
         if is_pg:
-            import psycopg2
-
-            conn = psycopg2.connect(db_url)
+            conn = _pg_connect()
             metrics = pd.read_sql_query("SELECT * FROM daily_metrics", conn)
         else:
             import duckdb
