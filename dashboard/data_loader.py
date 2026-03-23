@@ -8,22 +8,30 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime
 import sys
+import os
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def load_db(db_path: Path, date_from: Optional[str] = None, date_to: Optional[str] = None):
-    """Load all tables from DuckDB. Optional date filter on daily_metrics. Returns empty DFs on error."""
-    import duckdb
+    """Load all tables from PostgreSQL (if DATABASE_URL) or DuckDB fallback."""
+    db_url = os.getenv("DATABASE_URL")
+    conn = None
+    is_pg = bool(db_url)
     try:
-        conn = duckdb.connect(str(db_path), read_only=True)
+        if is_pg:
+            import psycopg2
+
+            conn = psycopg2.connect(db_url)
+            metrics = pd.read_sql_query("SELECT * FROM daily_metrics", conn)
+        else:
+            import duckdb
+
+            conn = duckdb.connect(str(db_path), read_only=True)
+            metrics = conn.execute("SELECT * FROM daily_metrics").fetchdf()
     except Exception:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-    try:
-        metrics = conn.execute("SELECT * FROM daily_metrics").fetchdf()
-    except Exception:
-        metrics = pd.DataFrame()
     if not metrics.empty and (date_from or date_to):
         try:
             metrics["date"] = pd.to_datetime(metrics["date"])
@@ -34,11 +42,17 @@ def load_db(db_path: Path, date_from: Optional[str] = None, date_to: Optional[st
         except Exception:
             pass
     try:
-        crisis = conn.execute("SELECT * FROM crisis_events ORDER BY crisis_start_date").fetchdf()
+        if is_pg:
+            crisis = pd.read_sql_query("SELECT * FROM crisis_events ORDER BY crisis_start_date", conn)
+        else:
+            crisis = conn.execute("SELECT * FROM crisis_events ORDER BY crisis_start_date").fetchdf()
     except Exception:
         crisis = pd.DataFrame()
     try:
-        destinations = conn.execute("SELECT * FROM destinations").fetchdf()
+        if is_pg:
+            destinations = pd.read_sql_query("SELECT * FROM destinations", conn)
+        else:
+            destinations = conn.execute("SELECT * FROM destinations").fetchdf()
     except Exception:
         destinations = pd.DataFrame()
     try:
@@ -73,7 +87,8 @@ def get_dashboard_data(db_path: Path = None, forecast_dir: Path = None, date_fro
     db_path = db_path or DB_PATH
     forecast_dir = forecast_dir or PROJECT_ROOT / "data" / "forecasts"
 
-    if not Path(db_path).exists():
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url and not Path(db_path).exists():
         return {
             "metrics_df": pd.DataFrame(),
             "crisis_df": pd.DataFrame(),
@@ -96,7 +111,10 @@ def get_dashboard_data(db_path: Path = None, forecast_dir: Path = None, date_fro
             "crisis_start": None,
             "last_updated": None,
         }
-    last_updated = datetime.fromtimestamp(Path(db_path).stat().st_mtime).strftime("%Y-%m-%d %H:%M") if Path(db_path).exists() else None
+    if db_url:
+        last_updated = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    else:
+        last_updated = datetime.fromtimestamp(Path(db_path).stat().st_mtime).strftime("%Y-%m-%d %H:%M") if Path(db_path).exists() else None
     forecast_data = load_forecast_data(forecast_dir)
 
     analytics = None

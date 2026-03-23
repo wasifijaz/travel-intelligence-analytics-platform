@@ -9,16 +9,45 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+import os
 
 import numpy as np
 import pandas as pd
 
-from config.settings import DB_PATH
+from config.settings import DB_PATH, DB_URL
 
 log = logging.getLogger(__name__)
 
 _json_travel_demand: bytes = b"{}"
 _json_travel_demand_summary: bytes = b'{"summary":""}'
+
+
+def _is_postgres() -> bool:
+    return bool(DB_URL or os.getenv("DATABASE_URL"))
+
+
+def _query_df(sql: str, params: list[Any] | None = None) -> pd.DataFrame:
+    params = params or []
+    if _is_postgres():
+        try:
+            import psycopg2
+
+            conn = psycopg2.connect(DB_URL or os.getenv("DATABASE_URL"))
+            q = sql.replace("?", "%s")
+            out = pd.read_sql_query(q, conn, params=params)
+            conn.close()
+            return out
+        except Exception:
+            return pd.DataFrame()
+    try:
+        import duckdb
+
+        conn = duckdb.connect(str(DB_PATH), read_only=True)
+        out = conn.execute(sql, params).fetchdf()
+        conn.close()
+        return out
+    except Exception:
+        return pd.DataFrame()
 
 
 def _safe_div(num: float | None, den: float | None) -> float | None:
@@ -149,11 +178,6 @@ def _metrics_totals(
 ) -> tuple[float, float]:
     """Total bookings and search_demand from daily_metrics (same grain as platform)."""
     try:
-        import duckdb
-        conn = duckdb.connect(str(DB_PATH), read_only=True)
-    except Exception:
-        return 0.0, 0.0
-    try:
         q = """
             SELECT COALESCE(SUM(bookings), 0) AS b, COALESCE(SUM(search_demand), 0) AS s
             FROM daily_metrics WHERE 1=1
@@ -176,24 +200,19 @@ def _metrics_totals(
             params.append(travel_type)
         crisis_filter_available = False
         if crisis_id is not None:
-            chk = conn.execute(
+            chk = _query_df(
                 "SELECT 1 FROM daily_metrics WHERE crisis_id = ? LIMIT 1",
                 [crisis_id],
-            ).fetchone()
-            crisis_filter_available = chk is not None
+            )
+            crisis_filter_available = not chk.empty
         if crisis_id is not None and crisis_filter_available:
             q += " AND crisis_id = ?"
             params.append(crisis_id)
-        row = conn.execute(q, params).fetchone()
-        if row:
-            return float(row[0] or 0), float(row[1] or 0)
+        rowdf = _query_df(q, params)
+        if not rowdf.empty:
+            return float(rowdf.iloc[0]["b"] or 0), float(rowdf.iloc[0]["s"] or 0)
     except Exception:
         log.exception("metrics totals")
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
     return 0.0, 0.0
 
 
@@ -202,13 +221,7 @@ def _get_crisis_window(crisis_id: int | None) -> tuple[str | None, str | None]:
     if crisis_id is None:
         return None, None
     try:
-        import duckdb
-
-        conn = duckdb.connect(str(DB_PATH), read_only=True)
-    except Exception:
-        return None, None
-    try:
-        row = conn.execute(
+        rowdf = _query_df(
             """
             SELECT crisis_start_date, crisis_end_date
             FROM crisis_events
@@ -216,34 +229,27 @@ def _get_crisis_window(crisis_id: int | None) -> tuple[str | None, str | None]:
             LIMIT 1
             """,
             [crisis_id],
-        ).fetchone()
-        if not row:
+        )
+        if rowdf.empty:
             return None, None
+        row = rowdf.iloc[0]
         start = pd.to_datetime(row[0]).strftime("%Y-%m-%d") if row[0] is not None else None
         end = pd.to_datetime(row[1]).strftime("%Y-%m-%d") if row[1] is not None else None
         return start, end
     except Exception:
         return None, None
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
 
 
 def _load_facts() -> tuple[pd.DataFrame, pd.DataFrame]:
     try:
-        import duckdb
-        conn = duckdb.connect(str(DB_PATH), read_only=True)
-        ff = conn.execute(
+        ff = _query_df(
             "SELECT date, origin_country, destination_id, route, flights_count, "
             "seat_capacity, load_factor, avg_airfare, airline FROM fact_flights"
-        ).fetchdf()
-        fv = conn.execute(
+        )
+        fv = _query_df(
             "SELECT date, origin_country, destination_id, visa_applications, visa_issued, "
             "visa_rejected, visa_type, processing_days FROM fact_visas"
-        ).fetchdf()
-        conn.close()
+        )
         return ff, fv
     except Exception:
         return pd.DataFrame(), pd.DataFrame()
@@ -258,12 +264,6 @@ def _load_bookings_daily(
     crisis_id: int | None,
 ) -> pd.DataFrame:
     """Daily bookings/room_nights from daily_metrics in current filter context."""
-    try:
-        import duckdb
-
-        conn = duckdb.connect(str(DB_PATH), read_only=True)
-    except Exception:
-        return pd.DataFrame(columns=["date", "bookings", "room_nights"])
     try:
         q = """
             SELECT date::DATE AS date,
@@ -290,16 +290,16 @@ def _load_bookings_daily(
             params.append(travel_type)
         crisis_filter_available = False
         if crisis_id is not None:
-            chk = conn.execute(
+            chk = _query_df(
                 "SELECT 1 FROM daily_metrics WHERE crisis_id = ? LIMIT 1",
                 [crisis_id],
-            ).fetchone()
-            crisis_filter_available = chk is not None
+            )
+            crisis_filter_available = not chk.empty
         if crisis_id is not None and crisis_filter_available:
             q += " AND crisis_id = ?"
             params.append(crisis_id)
         q += " GROUP BY 1 ORDER BY 1"
-        out = conn.execute(q, params).fetchdf()
+        out = _query_df(q, params)
         if out.empty:
             return pd.DataFrame(columns=["date", "bookings", "room_nights"])
         out["date"] = pd.to_datetime(out["date"])
@@ -307,11 +307,6 @@ def _load_bookings_daily(
     except Exception:
         log.exception("load bookings daily")
         return pd.DataFrame(columns=["date", "bookings", "room_nights"])
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
 
 
 def _sum_flights(df: pd.DataFrame) -> dict[str, float]:

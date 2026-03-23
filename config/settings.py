@@ -1,5 +1,6 @@
 """Pipeline configuration."""
 from pathlib import Path
+import os
 
 # Paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -10,7 +11,7 @@ PIPELINES_DIR = PROJECT_ROOT / "pipelines"
 
 # Database
 DB_PATH = PROJECT_ROOT / "data" / "hospitality.db"  # DuckDB
-# DB_URL = "postgresql://user:pass@localhost:5432/hospitality"  # PostgreSQL
+DB_URL = os.getenv("DATABASE_URL")  # Optional PostgreSQL URL for production runtime
 
 # Baseline window (days before crisis for computing baseline metrics)
 BASELINE_DAYS = 30
