@@ -1,0 +1,9 @@
+crisis_id,crisis_name,crisis_start_date,crisis_end_date,region_affected,crisis_phase,event_type
+1,Russia-Ukraine conflict,2022-02-24,,Eastern Europe;Russia;Ukraine;Poland;Romania;Moldova,escalation,geopolitical
+2,Israel-Hamas War,2023-10-07,,Israel;Palestine;Jordan;Egypt;Lebanon,peak,armed_conflict
+3,Iran-Israel escalation,2024-04-01,,Israel;Iran;Jordan;Iraq;Gulf,escalation,geopolitical
+4,Middle East regional instability,2024-01-01,,Middle East;Gulf;Eastern Mediterranean,ongoing,regional
+5,Israel-Hamas recovery phase,2024-06-01,,Israel;Palestine;Jordan,recovery,recovery
+6,Iran-Israel tensions 2025,2025-01-15,,Israel;Iran;UAE;Saudi Arabia,escalation,geopolitical
+7,Israel-Lebanon escalation 2026,2026-01-01,,Israel;Lebanon;Syria,escalation,geopolitical
+8,Regional instability 2026,2026-03-01,,Middle East;Gulf,ongoing,regional
